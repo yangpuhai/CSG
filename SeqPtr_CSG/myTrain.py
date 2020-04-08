@@ -2,7 +2,7 @@ from tqdm import tqdm
 import torch.nn as nn
 
 from utils.config import *
-from models.SpanPtr import *
+from models.SeqPtr import *
 
 '''
 python myTrain.py -dec= -bsz= -hdd= -dr= -lr= -mode= -value_oov_rate=
@@ -11,7 +11,7 @@ python myTrain.py -dec= -bsz= -hdd= -dr= -lr= -mode= -value_oov_rate=
 early_stop = args['earlyStop']
 
 if args['dataset']=='multiwoz':
-    from utils.utils_multiWOZ_DST import *
+    from utils.utils_multiWOZ_DST_new import *
     early_stop = None
 else:
     print("You need to provide the --dataset information")
@@ -33,6 +33,8 @@ model = globals()[args['decoder']](
     gating_dict=gating_dict, 
     nb_train_vocab=max_word)
 
+# print("[Info] Slots include ", SLOTS_LIST)
+# print("[Info] Unpointable Slots include ", gating_dict)
 
 for epoch in range(200):
     print("Epoch:{}".format(epoch))
@@ -43,7 +45,7 @@ for epoch in range(200):
         model.optimize(args['clip'])
         pbar.set_description(model.print_loss())
         # print(data)
-        #exit(1)
+        # exit(1)
 
     if((epoch+1) % int(args['evalp']) == 0):
         
