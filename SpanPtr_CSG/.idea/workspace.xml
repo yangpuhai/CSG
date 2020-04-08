@@ -16,11 +16,12 @@
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
     <property name="WebServerToolWindowFactoryState" value="true" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
     <property name="settings.editor.selected.configurable" value="com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable" />
   </component>
   <component name="RunManager" selected="Python.myTest">
     <configuration name="myTest" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="SpanPtr" />
+      <module name="SpanPtr_CSG" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
       <envs>
@@ -42,7 +43,7 @@
       <method v="2" />
     </configuration>
     <configuration name="myTrain" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="SpanPtr" />
+      <module name="SpanPtr_CSG" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
       <envs>
@@ -80,7 +81,12 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1586250153749</updated>
-      <workItem from="1586250159468" duration="8667000" />
+      <workItem from="1586250159468" duration="9772000" />
+      <workItem from="1586269819950" duration="119000" />
+      <workItem from="1586269989873" duration="69000" />
+      <workItem from="1586270087416" duration="11000" />
+      <workItem from="1586270305378" duration="645000" />
+      <workItem from="1586336263032" duration="18000" />
     </task>
     <servers />
   </component>
@@ -92,26 +98,26 @@
       <screen x="0" y="0" width="1440" height="920" />
     </state>
     <state x="451" y="207" key="#com.intellij.refactoring.safeDelete.UnsafeUsagesDialog/0.0.1440.920@0.0.1440.920" timestamp="1586263094869" />
-    <state width="1397" height="247" key="GridCell.Tab.0.bottom" timestamp="1586263787936">
+    <state width="1397" height="247" key="GridCell.Tab.0.bottom" timestamp="1586269804599">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
-    <state width="1397" height="247" key="GridCell.Tab.0.bottom/0.0.1440.920@0.0.1440.920" timestamp="1586263787936" />
-    <state width="1397" height="247" key="GridCell.Tab.0.center" timestamp="1586263787936">
+    <state width="1397" height="247" key="GridCell.Tab.0.bottom/0.0.1440.920@0.0.1440.920" timestamp="1586269804599" />
+    <state width="1397" height="247" key="GridCell.Tab.0.center" timestamp="1586269804598">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
-    <state width="1397" height="247" key="GridCell.Tab.0.center/0.0.1440.920@0.0.1440.920" timestamp="1586263787936" />
-    <state width="1397" height="247" key="GridCell.Tab.0.left" timestamp="1586263787936">
+    <state width="1397" height="247" key="GridCell.Tab.0.center/0.0.1440.920@0.0.1440.920" timestamp="1586269804598" />
+    <state width="1397" height="247" key="GridCell.Tab.0.left" timestamp="1586269804598">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
-    <state width="1397" height="247" key="GridCell.Tab.0.left/0.0.1440.920@0.0.1440.920" timestamp="1586263787936" />
-    <state width="1397" height="247" key="GridCell.Tab.0.right" timestamp="1586263787936">
+    <state width="1397" height="247" key="GridCell.Tab.0.left/0.0.1440.920@0.0.1440.920" timestamp="1586269804598" />
+    <state width="1397" height="247" key="GridCell.Tab.0.right" timestamp="1586269804599">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
-    <state width="1397" height="247" key="GridCell.Tab.0.right/0.0.1440.920@0.0.1440.920" timestamp="1586263787936" />
-    <state x="222" y="103" key="SettingsEditor" timestamp="1586252948139">
+    <state width="1397" height="247" key="GridCell.Tab.0.right/0.0.1440.920@0.0.1440.920" timestamp="1586269804599" />
+    <state x="222" y="103" key="SettingsEditor" timestamp="1586336280402">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
-    <state x="222" y="103" key="SettingsEditor/0.0.1440.920@0.0.1440.920" timestamp="1586252948139" />
+    <state x="222" y="103" key="SettingsEditor/0.0.1440.920@0.0.1440.920" timestamp="1586336280402" />
     <state x="601" y="190" key="ftp.server.browser" timestamp="1586252945107">
       <screen x="0" y="0" width="1440" height="920" />
     </state>
