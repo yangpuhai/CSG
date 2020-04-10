@@ -10,6 +10,7 @@ PAD_token = 1
 SOS_token = 3
 EOS_token = 2
 UNK_token = 0
+seg_token = 4
 
 USE_CUDA = True
 
@@ -19,7 +20,7 @@ MAX_LENGTH = 10
 parser = argparse.ArgumentParser(description='SpanPtr Multi-Domain DST')
 
 # Training Setting
-parser.add_argument('-mode','--mode', help='mode', required=False, default="emb")
+parser.add_argument('-mode','--mode', help='mode', required=False, default="sum")
 parser.add_argument('-value_oov_rate','--value_oov_rate', help='value_oov_rate', required=False, default=0.0)
 parser.add_argument('-ds','--dataset', help='dataset', required=False, default="multiwoz")
 parser.add_argument('-t','--task', help='Task Number', required=False, default="dst")
