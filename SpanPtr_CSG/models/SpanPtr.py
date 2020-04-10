@@ -9,10 +9,11 @@ import numpy as np
 
 import os
 import json
+import copy
 
 from utils.masked_cross_entropy import *
 from utils.config import *
-
+import pprint
 
 class SpanPtr(nn.Module):
     def __init__(self, mode, hidden_size, lang, path, task, lr, dropout, slots, gating_dict, nb_train_vocab=0):
@@ -66,7 +67,10 @@ class SpanPtr(nn.Module):
         return 'L:{:.2f},LP:{:.2f},LG:{:.2f}'.format(print_loss_avg,print_loss_ptr,print_loss_gate)
     
     def save_model(self, dec_type):
-        directory = 'save/SpanPtr-'+args["addName"]+args['dataset']+str(self.task)+'-' + str(args["value_oov_rate"]) + '-' + args['mode'] +'/'+'HDD'+str(self.hidden_size)+'BSZ'+str(args['batch'])+'DR'+str(self.dropout)+str(dec_type)
+        #directory = 'save/SpanPtr-'+args["addName"]+args['dataset']+str(self.task)+'/'+'HDD'+str(self.hidden_size)+'BSZ'+str(args['batch'])+'DR'+str(self.dropout)+str(dec_type)
+        directory = 'save/SpanPtr-' + args["addName"] + args['dataset'] + str(self.task) + '-' + str(
+            args["value_oov_rate"]) + '-' + args['mode'] + '/' + 'HDD' + str(self.hidden_size) + 'BSZ' + str(
+            args['batch']) + 'DR' + str(self.dropout) + str(dec_type)
         if not os.path.exists(directory):
             os.makedirs(directory)
         torch.save(self.encoder, directory + '/enc.th')
@@ -76,6 +80,8 @@ class SpanPtr(nn.Module):
         self.loss, self.print_every, self.loss_ptr, self.loss_gate, self.loss_class = 0, 1, 0, 0, 0
 
     def train_batch(self, data, clip, slot_temp, reset=0):
+        #print(data)
+        #exit()
         if reset: self.reset()
         # Zero gradients of both optimizers
         self.optimizer.zero_grad()
@@ -83,14 +89,15 @@ class SpanPtr(nn.Module):
         # Encode and Decode
         use_teacher_forcing = random.random() < args["teacher_forcing_ratio"]
         all_point_outputs, gates, words_point_out, words_class_out = self.encode_and_decode(data, use_teacher_forcing, slot_temp)
+        #print(all_point_outputs, '\n',gates, '\n',words_point_out, '\n',words_class_out)
 
-        loss_ptr = masked_cross_entropy_for_value2(
+        loss_ptr = masked_cross_entropy_for_value(
             all_point_outputs.transpose(0, 1).contiguous(),
-            data["generate_y_out"].contiguous(),  # [:,:len(self.point_slots)].contiguous(),
-            data["y_out_lengths"],
-            data["extend_vocab_len"])  # [:,:len(self.point_slots)])
-
+            data["generate_y"].contiguous(), #[:,:len(self.point_slots)].contiguous(),
+            data["y_lengths"], #[:,:len(self.point_slots)])
+            data['context_len'],)
         loss_gate = self.cross_entorpy(gates.transpose(0, 1).contiguous().view(-1, gates.size(-1)), data["gating_label"].contiguous().view(-1))
+
 
         if args["use_gate"]:
             loss = loss_ptr + loss_gate
@@ -128,15 +135,16 @@ class SpanPtr(nn.Module):
         else:
             story = data['context']
         # Encode dialog history
+        #print('story:',story)
         encoded_outputs, encoded_hidden = self.encoder(story.transpose(0, 1), data['context_len'])
 
         # Get the words that can be copy from the memory
         batch_size = len(data['context_len'])
         self.copy_list = data['context_plain']
-        max_res_len = data['generate_y_in'].size(2) if self.encoder.training else 10
+        max_res_len = data['generate_y'].size(2) if self.encoder.training else 2
         all_point_outputs, all_gate_outputs, words_point_out, words_class_out = self.decoder.forward(batch_size, \
-            encoded_hidden, encoded_outputs, data['context_len'], data['enc_batch_extend_vocab_idx'], max_res_len, data['generate_y_in'], \
-            use_teacher_forcing, slot_temp, data['extra_zeros'], data['oovs_idx2word'])
+            encoded_hidden, encoded_outputs, data['context_len'], story, max_res_len, data['generate_y'], \
+            use_teacher_forcing, slot_temp, [d.split() for d in data['context_plain']])
         return all_point_outputs, all_gate_outputs, words_point_out, words_class_out
 
     def evaluate(self, dev, matric_best, slot_temp, early_stop=None):
@@ -150,7 +158,14 @@ class SpanPtr(nn.Module):
         inverse_unpoint_slot = dict([(v, k) for k, v in self.gating_dict.items()])
         pbar = tqdm(enumerate(dev),total=len(dev))
         for j, data_dev in pbar:
+            #exit()
             # Encode and Decode
+            '''
+            for cont in data_dev['context_plain']:
+                cont=cont.split(';')
+                for c in cont:
+                    print(c)
+            '''
             batch_size = len(data_dev['context_len'])
             _, gates, words, class_words = self.encode_and_decode(data_dev, False, slot_temp)
 
@@ -161,6 +176,8 @@ class SpanPtr(nn.Module):
                 predict_belief_bsz_ptr, predict_belief_bsz_class = [], []
                 gate = torch.argmax(gates.transpose(0, 1)[bi], dim=1)
 
+                text_plain=data_dev['context_plain'][bi].split()
+
                 # pointer-generator results
                 if args["use_gate"]:
                     for si, sg in enumerate(gate):
@@ -169,11 +186,11 @@ class SpanPtr(nn.Module):
                         elif sg==self.gating_dict["ptr"]:
                             pred = np.transpose(words[si])[bi]
                             st = []
-                            for e in pred:
-                                if e== 'EOS': break
-                                else: st.append(e)
+                            if pred[1]>=pred[0]:
+                                st=text_plain[pred[0]:pred[1]+1]
+
                             st = " ".join(st)
-                            if st == "none":
+                            if st == "EOS" or st == "" or st=="SOS":
                                 continue
                             else:
                                 predict_belief_bsz_ptr.append(slot_temp[si]+"-"+str(st))
@@ -183,11 +200,11 @@ class SpanPtr(nn.Module):
                     for si, _ in enumerate(gate):
                         pred = np.transpose(words[si])[bi]
                         st = []
-                        for e in pred:
-                            if e == 'EOS': break
-                            else: st.append(e)
+                        if pred[1] >= pred[0]:
+                            st = text_plain[pred[0]:pred[1] + 1]
+
                         st = " ".join(st)
-                        if st == "none":
+                        if st == "EOS" or st == "" or st == "SOS":
                             continue
                         else:
                             predict_belief_bsz_ptr.append(slot_temp[si]+"-"+str(st))
@@ -330,8 +347,8 @@ class Generator(nn.Module):
     def __init__(self, mode, lang, shared_emb, vocab_size, hidden_size, dropout, slots, nb_gate):
         super(Generator, self).__init__()
         self.vocab_size = vocab_size
-        self.mode = mode
         self.lang = lang
+        self.mode = mode
         self.embedding = shared_emb 
         self.dropout_layer = nn.Dropout(dropout)
         if self.mode == 'cat':
@@ -340,10 +357,7 @@ class Generator(nn.Module):
             self.gru = nn.GRU(hidden_size, hidden_size, dropout=dropout)
         self.nb_gate = nb_gate
         self.hidden_size = hidden_size
-        if self.mode == 'cat':
-            self.W_ratio = nn.Linear(4 * hidden_size, 1)
-        else:
-            self.W_ratio = nn.Linear(3*hidden_size, 1)
+        self.W_ratio = nn.Linear(3*hidden_size, 1)
         self.softmax = nn.Softmax(dim=1)
         self.sigmoid = nn.Sigmoid()
         self.slots = slots
@@ -360,14 +374,14 @@ class Generator(nn.Module):
         self.Slot_emb = nn.Embedding(len(self.slot_w2i), hidden_size)
         self.Slot_emb.weight.data.normal_(0, 0.1)
 
-    def forward(self, batch_size, encoded_hidden, encoded_outputs, encoded_lens, story, max_res_len, target_batches,\
-                use_teacher_forcing, slot_temp, extra_zeros, oovs_idx2word):
-        all_point_outputs = torch.zeros(len(slot_temp), batch_size, max_res_len, max([len(w) for w in oovs_idx2word]))
+    def forward(self, batch_size, encoded_hidden, encoded_outputs, encoded_lens, story, max_res_len, target_batches, use_teacher_forcing, slot_temp, data_plain):
+        #prob_size=max([len(d) for d in data_plain])
+        all_point_outputs = torch.zeros(len(slot_temp), batch_size, max_res_len, encoded_outputs.size(1))
         all_gate_outputs = torch.zeros(len(slot_temp), batch_size, self.nb_gate)
         if USE_CUDA: 
             all_point_outputs = all_point_outputs.cuda()
             all_gate_outputs = all_gate_outputs.cuda()
-
+        
         # Get the slot embedding
         slot_emb_dict = {}
         for slot in slot_temp:
@@ -395,6 +409,7 @@ class Generator(nn.Module):
         words_point_out = []
         counter = 0
         for slot in slot_temp:
+            #print('slot:',slot)
             hidden = encoded_hidden
             words = []
             slot_emb = slot_emb_dict[slot]
@@ -407,62 +422,70 @@ class Generator(nn.Module):
                     dec_state, hidden = self.gru(decoder_input.expand_as(torch.cat([hidden, hidden], -1)), hidden)
                 else:
                     dec_state, hidden = self.gru(decoder_input.expand_as(hidden), hidden)
-                context_vec, logits, prob = self.attend(encoded_outputs, hidden.squeeze(0), encoded_lens)
+                context_vec, logits, prob = self.attend(encoded_outputs, dec_state.squeeze(0), encoded_lens)
                 if wi == 0:
                     all_gate_outputs[counter] = self.W_gate(context_vec)
-                p_vocab = self.attend_vocab(self.embedding.weight, hidden.squeeze(0))
-
-                p_gen_vec = torch.cat([dec_state.squeeze(0), context_vec, decoder_input], -1)
-                vocab_pointer_switches = self.sigmoid(self.W_ratio(p_gen_vec))
-                if extra_zeros is not None:
-                    p_vocab = torch.cat([p_vocab, extra_zeros], 1)
-
-                p_context_ptr = torch.zeros(p_vocab.size())
-                if USE_CUDA: p_context_ptr = p_context_ptr.cuda()
-                p_context_ptr.scatter_add_(1, story, prob)
-                final_p_vocab = (1 - vocab_pointer_switches).expand_as(p_context_ptr) * p_context_ptr + \
-                                vocab_pointer_switches.expand_as(p_context_ptr) * p_vocab
-
-                final_p_vocab = final_p_vocab + 1e-12
-
+                p_context_ptr = prob
+                final_p_vocab = p_context_ptr
                 pred_word = torch.argmax(final_p_vocab, dim=1)
-                pred_word_en = torch.argmax(prob, dim=1)
+                words.append(pred_word.data.cpu().numpy())
+                '''
+                decoder_input2 = None
+                if use_teacher_forcing:
+                    for i in range(batch_size):
+                        eo = story[i][target_batches[:, counter, wi][i]]
+                        eo = eo.unsqueeze(0)
+                        decoder_input2 = eo if decoder_input2 is None else torch.cat([decoder_input2, eo], 0)
+                else:
+                    for i in range(batch_size):
+                        eo = story[i][pred_word[i]]
+                        eo = eo.unsqueeze(0)
+                        decoder_input2 = eo if decoder_input2 is None else torch.cat([decoder_input2, eo], 0)
+                decoder_input2 = self.embedding(decoder_input2)
 
-                words.append([oovs_idx2word[i][pred_word[i].item()] for i in range(pred_word.size()[0])])
-                all_point_outputs[counter, :, wi, :] = final_p_vocab
-
+                decoder_input = decoder_input2
+                '''
                 decoder_input1 = None
                 if self.mode != 'emb':
-                    index = pred_word_en.view(batch_size, 1)
-                    index = index.expand(batch_size, self.hidden_size)
-                    index = index.unsqueeze(1)
-                    decoder_input_1 = torch.gather(encoded_outputs, dim=1, index=index)
-                    decoder_input1 = decoder_input_1.squeeze(1)
+                    if use_teacher_forcing:
+                        index = target_batches[:, counter, wi].view(batch_size, 1)
+                        index = index.expand(batch_size, self.hidden_size)
+                        index = index.unsqueeze(1)
+                        decoder_input_1 = torch.gather(encoded_outputs, dim=1, index=index)
+                        decoder_input1 = decoder_input_1.squeeze(1)
+                    else:
+                        index = pred_word.view(batch_size, 1)
+                        index = index.expand(batch_size, self.hidden_size)
+                        index = index.unsqueeze(1)
+                        decoder_input_1 = torch.gather(encoded_outputs, dim=1, index=index)
+                        decoder_input1 = decoder_input_1.squeeze(1)
 
                 decoder_input2 = None
                 if self.mode != 'enc':
                     if use_teacher_forcing:
-                        decoder_input2 = self.embedding(target_batches[:, counter, wi])  # Chosen word is next input
+                        index = target_batches[:, counter, wi].view(batch_size, 1)
+                        decoder_input_2 = torch.gather(story, dim=1, index=index)
+                        decoder_input2 = decoder_input_2.squeeze(1)
                     else:
-                        for i in range(pred_word.size()[0]):
-                            if pred_word[i] >= self.vocab_size:
-                                pred_word[i] = 0
-                        decoder_input2 = self.embedding(pred_word)
+                        index = pred_word.view(batch_size, 1)
+                        decoder_input_2 = torch.gather(story, dim=1, index=index)
+                        decoder_input2 = decoder_input_2.squeeze(1)
+                    decoder_input2 = self.embedding(decoder_input2)
 
-                if self.mode=='emb':
+                if self.mode == 'emb':
                     decoder_input = decoder_input2
-                if self.mode=='enc':
+                if self.mode == 'enc':
                     decoder_input = decoder_input1
-                if self.mode=='cat':
-                    decoder_input = torch.cat([decoder_input1,decoder_input2],-1)
-                if self.mode=='sum':
+                if self.mode == 'cat':
+                    decoder_input = torch.cat([decoder_input1, decoder_input2], -1)
+                if self.mode == 'sum':
                     decoder_input = decoder_input1 + decoder_input2
-                if self.mode=='pws':
-                    decoder_input = (1 - vocab_pointer_switches) * decoder_input1 + \
-                    vocab_pointer_switches * decoder_input2
+
+                all_point_outputs[counter, :, wi, :] = final_p_vocab
 
             counter += 1
             words_point_out.append(words)
+            #print(words)
         return all_point_outputs, all_gate_outputs, words_point_out, words_class_out
 
     def attend(self, seq, cond, lens):

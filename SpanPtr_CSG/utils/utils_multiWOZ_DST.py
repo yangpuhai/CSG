@@ -20,41 +20,22 @@ import os
 import pickle
 from random import shuffle
 
-import sys
-reload(sys)
-sys.setdefaultencoding('utf-8')
-
 from .fix_label import *
 
 EXPERIMENT_DOMAINS = ["hotel", "train", "restaurant", "attraction", "taxi"]
 
-def seq2extend_ids(lis, word2idx):
-    ids = []
-    oovs = []
-    oovs_word2idx={}
-    for w in lis:
-        if w in word2idx:
-            ids.append(word2idx[w])
-        else:
-            if w not in oovs:
-                oovs.append(w)
-            oov_num = oovs.index(w)
-            ids.append(len(word2idx) + oov_num)
-            oovs_word2idx[w]=len(word2idx) + oov_num
-    oovs_word2idx.update(word2idx)
-    return ids, oovs, oovs_word2idx
 
 class Lang:
     def __init__(self):
         self.word2index = {}
-        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS", UNK_token: 'UNK'}
-        self.n_words = len(self.index2word) # Count default tokens
+        self.index2word = {PAD_token: "PAD", SOS_token: "SOS", EOS_token: "EOS", UNK_token: 'UNK', seg_token: ';'}
+        self.n_words = len(self.index2word)  # Count default tokens
         self.word2index = dict([(v, k) for k, v in self.index2word.items()])
-      
+
     def index_words(self, sent, type, value_list):
         if type == 'utter':
             for word in sent.split():
-                self.index_word2(word,value_list)
+                self.index_word2(word, value_list)
         elif type == 'slot':
             for slot in sent:
                 d, s = slot.split("-")
@@ -64,11 +45,11 @@ class Lang:
         elif type == 'belief':
             for slot, value in sent.items():
                 d, s = slot.split("-")
-                self.index_word2(d,value_list)
+                self.index_word2(d, value_list)
                 for ss in s.split():
-                    self.index_word2(ss,value_list)
+                    self.index_word2(ss, value_list)
                 for v in value.split():
-                    self.index_word2(v,value_list)
+                    self.index_word2(v, value_list)
 
     def index_word(self, word):
         if word not in self.word2index:
@@ -85,7 +66,7 @@ class Lang:
 
 class Dataset(data.Dataset):
     """Custom data.Dataset compatible with data.DataLoader."""
-    def __init__(self, data_info, src_word2id, trg_word2id, trg_n_words, sequicity, mem_word2id):
+    def __init__(self, data_info, src_word2id, trg_word2id, sequicity, mem_word2id):
         """Reads source and target sequences from txt files."""
         self.ID = data_info['ID']
         self.turn_domain = data_info['turn_domain']
@@ -100,7 +81,6 @@ class Dataset(data.Dataset):
         self.src_word2id = src_word2id
         self.trg_word2id = trg_word2id
         self.mem_word2id = mem_word2id
-        self.trg_n_words = trg_n_words
     
     def __getitem__(self, index):
         """Returns one data pair (source and target)."""
@@ -110,22 +90,19 @@ class Dataset(data.Dataset):
         gating_label = self.gating_label[index]
         turn_uttr = self.turn_uttr[index]
         turn_domain = self.preprocess_domain(self.turn_domain[index])
-        context = self.dialog_history[index]
-        ids, oov_list, oovs_word2idx = seq2extend_ids(context.split(), self.trg_word2id)
-        oovs_idx2word = {v: k for k, v in oovs_word2idx.items()}
         generate_y = self.generate_y[index]
-        #print('/n')
-        #print(context.split())
-        #print(generate_y)
-        #print(len(oovs_word2idx))
-        generate_y_in = self.preprocess_slot(generate_y, self.trg_word2id)
-        generate_y_out = self.preprocess_slot(generate_y, oovs_word2idx)
+        context = self.dialog_history[index]
+        #print('\n','text:')
+        #for index, value in enumerate(context.split()):
+            #print(index, value,' ',)
+        #print(list(enumerate(context.split())))
+        #for t in context.split(';'):
+            #print(t)
+        #print('\n',generate_y)
+        generate_y= self.preprocess_slot(generate_y, context)
         context = self.preprocess(context, self.src_word2id)
         context_plain = self.dialog_history[index]
-        enc_batch_extend_vocab_idx = torch.Tensor(ids)
-        #print(generate_y_in)
-        #print(generate_y_out)
-        extend_vocab_len = self.trg_n_words + len(oov_list)
+        #print(generate_y)
         
         item_info = {
             "ID":ID, 
@@ -136,12 +113,7 @@ class Dataset(data.Dataset):
             "context_plain":context_plain, 
             "turn_uttr_plain":turn_uttr, 
             "turn_domain":turn_domain, 
-            "generate_y_in":generate_y_in,
-            "generate_y_out": generate_y_out,
-            "enc_batch_extend_vocab_idx":enc_batch_extend_vocab_idx,
-            "oov_list":oov_list,
-            "oovs_idx2word":oovs_idx2word,
-            "extend_vocab_len":extend_vocab_len
+            "generate_y":generate_y, 
             }
         return item_info
 
@@ -154,6 +126,7 @@ class Dataset(data.Dataset):
         story = torch.Tensor(story)
         return story
 
+    '''
     def preprocess_slot(self, sequence, word2idx):
         """Converts words to ids."""
         story = []
@@ -161,6 +134,80 @@ class Dataset(data.Dataset):
             v = [word2idx[word] if word in word2idx else UNK_token for word in value.split()] + [EOS_token]
             story.append(v)
         # story = torch.Tensor(story)
+        return story
+    '''
+
+    def position(self,word,sequence):
+        pos=len(sequence)-1
+        #print(pos)
+        for i in reversed(range(len(sequence))):
+            if word == sequence[i]:
+                pos=i
+                break
+        return pos
+
+    '''
+    def preprocess_slot(self, slot, sequences):
+        """Converts words to ids."""
+        story = []
+        sequence = sequences.split()
+        for value in slot:
+            slot_v=[]
+            if value is not 'none' and value is not 'dontcare':
+                patt = value
+                # print(value)
+                # print(sequences)
+                pattern = re.compile(patt)
+                m = pattern.finditer(sequences)
+                m = [mi for mi in m]
+                if m != []:
+                    line_st = sequences[:m[-1].span()[0]]
+                    start = len(line_st.split())
+                    slot_v = [start + i for i in range(len(value.split()))]
+                else:
+                    slot_v = [self.position(word, sequence) for word in value.split()]
+            else:
+                if value is 'none':
+                    slot_v=[]
+                else:
+                    slot_v = [0]
+            v = slot_v+[len(sequence)-1]
+            story.append(v)
+        sequences_list=sequence
+        for s in story:
+            if random.random()<0.2:
+                for si in s[:-1]:
+                    if si!=0 and si!=len(sequence)-1:
+                        sequences_list[si]="UNK"
+        sequences_new=' '.join(sequences_list)
+
+        return story,sequences_new
+        '''
+    def preprocess_slot(self, slot, sequences):
+        """Converts words to ids."""
+        story = []
+        sequence = sequences.split()
+        for value in slot:
+            slot_v=[]
+            if value is not 'none' and value is not 'dontcare':
+                patt = value
+                # print(value)
+                # print(sequences)
+                pattern = re.compile(patt)
+                m = pattern.finditer(sequences)
+                m = [mi for mi in m]
+                if m != []:
+                    line_st = sequences[:m[-1].span()[0]]
+                    start = len(line_st.split())
+                    slot_v = [start, start + len(value.split())-1]
+                else:
+                    slot_v = [len(sequence)-1, len(sequence)-1]
+            else:
+                if value is 'none':
+                    slot_v=[len(sequence)-1, len(sequence)-1]
+                else:
+                    slot_v = [0, 0]
+            story.append(slot_v)
         return story
 
     def preprocess_memory(self, sequence, word2idx):
@@ -194,11 +241,10 @@ def collate_fn(data):
             padded_seqs[i, :end] = seq[:end]
         padded_seqs = padded_seqs.detach() #torch.tensor(padded_seqs)
         return padded_seqs, lengths
-
+    '''
     def merge_multi_response(sequences):
-        '''
-        merge from batch * nb_slot * slot_len to batch * nb_slot * max_slot_len
-        '''
+        # merge from batch * nb_slot * slot_len to batch * nb_slot * max_slot_len
+        print('sequences:',sequences)
         lengths = []
         for bsz_seq in sequences:
             length = [len(v) for v in bsz_seq]
@@ -213,6 +259,36 @@ def collate_fn(data):
             padded_seqs.append(pad_seq)
         padded_seqs = torch.tensor(padded_seqs)
         lengths = torch.tensor(lengths)
+        print(padded_seqs)
+        print(lengths)
+        exit()
+        return padded_seqs, lengths
+    '''
+
+    def merge_multi_response(sequences,src_lengths):
+        '''
+        merge from batch * nb_slot * slot_len to batch * nb_slot * max_slot_len
+        '''
+        #print('sequences:',sequences)
+        lengths = []
+        for bsz_seq in sequences:
+            length = [len(v) for v in bsz_seq]
+            lengths.append(length)
+        max_len = max([max(l) for l in lengths])
+        padded_seqs = []
+        i=0
+        for bsz_seq in sequences:
+            pad_seq = []
+            for v in bsz_seq:
+                v = v + [src_lengths[i]-1] * (max_len-len(v))
+                pad_seq.append(v)
+            padded_seqs.append(pad_seq)
+            i+=1
+        padded_seqs = torch.tensor(padded_seqs)
+        lengths = torch.tensor(lengths)
+        #print(padded_seqs)
+        #print(lengths)
+        #exit()
         return padded_seqs, lengths
 
 
@@ -234,57 +310,47 @@ def collate_fn(data):
 
     # merge sequences
     src_seqs, src_lengths = merge(item_info['context'])
-    extend_vocab_src, _ = merge(item_info['enc_batch_extend_vocab_idx'])
-    y_in_seqs, y_in_lengths = merge_multi_response(item_info["generate_y_in"])
-    y_out_seqs, y_out_lengths = merge_multi_response(item_info["generate_y_out"])
+    y_seqs, y_lengths = merge_multi_response(item_info["generate_y"],src_lengths)
     gating_label = torch.tensor(item_info["gating_label"])
     turn_domain = torch.tensor(item_info["turn_domain"])
 
-    oov_list_len=max([len(li) for li in item_info['oov_list']])
-    if oov_list_len == 0:
-        extra_zeros = None
-    else:
-        extra_zeros = torch.zeros((len(item_info['oov_list']), oov_list_len))
-
     if USE_CUDA:
         src_seqs = src_seqs.cuda()
-        extend_vocab_src = extend_vocab_src.cuda()
         gating_label = gating_label.cuda()
         turn_domain = turn_domain.cuda()
-        y_in_seqs = y_in_seqs.cuda()
-        y_in_lengths = y_in_lengths.cuda()
-        y_out_seqs = y_out_seqs.cuda()
-        y_out_lengths = y_out_lengths.cuda()
-        if extra_zeros is not None:
-            extra_zeros = extra_zeros.cuda()
-
+        y_seqs = y_seqs.cuda()
+        y_lengths = y_lengths.cuda()
 
     item_info["context"] = src_seqs
-    item_info['enc_batch_extend_vocab_idx'] = extend_vocab_src
     item_info["context_len"] = src_lengths
     item_info["gating_label"] = gating_label
     item_info["turn_domain"] = turn_domain
-    item_info["generate_y_in"] = y_in_seqs
-    item_info["y_in_lengths"] = y_in_lengths
-    item_info["generate_y_out"] = y_out_seqs
-    item_info["y_out_lengths"] = y_out_lengths
-    item_info["extra_zeros"] = extra_zeros
+    item_info["generate_y"] = y_seqs
+    item_info["y_lengths"] = y_lengths
     return item_info
 
-def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lang, sequicity, training, max_line = None):
+
+def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lang, sequicity, training, max_line=None):
     print(("Reading from {}".format(file_name)))
     data = []
     max_resp_len, max_value_len = 0, 0
     domain_counter = {}
-    sum1=0
+    sum1 = 0
     with open(file_name) as f:
         dials = json.load(f)
         # create vocab first
+        '''
+        for dial_dict in dials:
+            if (args["all_vocab"] or dataset=="train") and training:
+                for ti, turn in enumerate(dial_dict["dialogue"]):
+                    lang.index_words(turn["system_transcript"], 'utter')
+                    lang.index_words(turn["transcript"], 'utter')
+        '''
         # determine training data ratio, default is 100%
-        if training and dataset=="train" and args["data_ratio"]!=100:
+        if training and dataset == "train" and args["data_ratio"] != 100:
             random.Random(10).shuffle(dials)
-            dials = dials[:int(len(dials)*0.01*args["data_ratio"])]
-        
+            dials = dials[:int(len(dials) * 0.01 * args["data_ratio"])]
+
         cnt_lin = 1
         for dial_dict in dials:
             dialog_history = ""
@@ -300,8 +366,10 @@ def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lan
             # Unseen domain setting
             if args["only_domain"] != "" and args["only_domain"] not in dial_dict["domains"]:
                 continue
-            if (args["except_domain"] != "" and dataset == "test" and args["except_domain"] not in dial_dict["domains"]) or \
-               (args["except_domain"] != "" and dataset != "test" and [args["except_domain"]] == dial_dict["domains"]): 
+            if (args["except_domain"] != "" and dataset == "test" and args["except_domain"] not in dial_dict[
+                "domains"]) or \
+                    (args["except_domain"] != "" and dataset != "test" and [args["except_domain"]] == dial_dict[
+                        "domains"]):
                 continue
 
             # Reading data
@@ -310,7 +378,7 @@ def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lan
                 turn_id = turn["turn_idx"]
                 turn_uttr = turn["system_transcript"] + " ; " + turn["transcript"]
                 turn_uttr_strip = turn_uttr.strip()
-                dialog_history +=  (turn["system_transcript"] + " ; " + turn["transcript"] + " ; ")
+                dialog_history += (turn["system_transcript"] + " ; " + turn["transcript"] + " ; ")
                 source_text = dialog_history.strip()
                 turn_belief_dict = fix_general_label_error(turn["belief_state"], False, SLOTS)
 
@@ -319,27 +387,31 @@ def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lan
                 if dataset == "train" or dataset == "dev":
                     if args["except_domain"] != "":
                         slot_temp = [k for k in SLOTS if args["except_domain"] not in k]
-                        turn_belief_dict = OrderedDict([(k, v) for k, v in turn_belief_dict.items() if args["except_domain"] not in k])
+                        turn_belief_dict = OrderedDict(
+                            [(k, v) for k, v in turn_belief_dict.items() if args["except_domain"] not in k])
                     elif args["only_domain"] != "":
                         slot_temp = [k for k in SLOTS if args["only_domain"] in k]
-                        turn_belief_dict = OrderedDict([(k, v) for k, v in turn_belief_dict.items() if args["only_domain"] in k])
+                        turn_belief_dict = OrderedDict(
+                            [(k, v) for k, v in turn_belief_dict.items() if args["only_domain"] in k])
                 else:
                     if args["except_domain"] != "":
                         slot_temp = [k for k in SLOTS if args["except_domain"] in k]
-                        turn_belief_dict = OrderedDict([(k, v) for k, v in turn_belief_dict.items() if args["except_domain"] in k])
+                        turn_belief_dict = OrderedDict(
+                            [(k, v) for k, v in turn_belief_dict.items() if args["except_domain"] in k])
                     elif args["only_domain"] != "":
                         slot_temp = [k for k in SLOTS if args["only_domain"] in k]
-                        turn_belief_dict = OrderedDict([(k, v) for k, v in turn_belief_dict.items() if args["only_domain"] in k])
+                        turn_belief_dict = OrderedDict(
+                            [(k, v) for k, v in turn_belief_dict.items() if args["only_domain"] in k])
 
-                turn_belief_list = [str(k)+'-'+str(v) for k, v in turn_belief_dict.items()]
+                turn_belief_list = [str(k) + '-' + str(v) for k, v in turn_belief_dict.items()]
 
-                if (args["all_vocab"] or dataset=="train") and training:
+                if (args["all_vocab"] or dataset == "train") and training:
                     mem_lang.index_words(turn_belief_dict, 'belief', value_list)
 
-                class_label, generate_y, slot_mask, gating_label  = [], [], [], []
+                class_label, generate_y, slot_mask, gating_label = [], [], [], []
                 start_ptr_label, end_ptr_label = [], []
                 for slot in slot_temp:
-                    if slot in turn_belief_dict.keys(): 
+                    if slot in turn_belief_dict.keys():
                         generate_y.append(turn_belief_dict[slot])
 
                         if turn_belief_dict[slot] == "dontcare":
@@ -355,29 +427,28 @@ def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lan
                     else:
                         generate_y.append("none")
                         gating_label.append(gating_dict["none"])
-                
                 data_detail = {
-                    "ID":dial_dict["dialogue_idx"], 
-                    "domains":dial_dict["domains"], 
-                    "turn_domain":turn_domain,
-                    "turn_id":turn_id, 
-                    "dialog_history":source_text+' EOS',
-                    "turn_belief":turn_belief_list,
-                    "gating_label":gating_label, 
-                    "turn_uttr":turn_uttr_strip, 
-                    'generate_y':generate_y
-                    }
+                    "ID": dial_dict["dialogue_idx"],
+                    "domains": dial_dict["domains"],
+                    "turn_domain": turn_domain,
+                    "turn_id": turn_id,
+                    "dialog_history": 'SOS ' + source_text + ' EOS',
+                    "turn_belief": turn_belief_list,
+                    "gating_label": gating_label,
+                    "turn_uttr": turn_uttr_strip,
+                    'generate_y': generate_y
+                }
 
-                if not turn_belief_dict:
-                    continue
+                #if not turn_belief_dict:
+                #    continue
 
                 if dataset == "train":
-                    tag1=0
+                    tag1 = 0
                     for value in generate_y:
                         if value is not "none" and value is not "dontcare" and value not in source_text:
-                            tag1=1
+                            tag1 = 1
                             break
-                    if tag1==1:
+                    if tag1 == 1:
                         continue
 
                 if dataset == "dev" or dataset == "test":
@@ -388,24 +459,23 @@ def read_langs(value_list, file_name, gating_dict, SLOTS, dataset, lang, mem_lan
 
                 else:
                     if (args["all_vocab"] or dataset == "train") and training:
-                            lang.index_words(turn_uttr, 'utter', value_list)
+                        lang.index_words(turn_uttr, 'utter', value_list)
 
                 data.append(data_detail)
                 if max_resp_len < len(source_text.split()):
                     max_resp_len = len(source_text.split())
-                
+
             cnt_lin += 1
-            if(max_line and cnt_lin>=max_line):
+            if (max_line and cnt_lin >= max_line):
                 break
 
     # add t{} to the lang file
-    if "t{}".format(max_value_len-1) not in mem_lang.word2index.keys() and training:
+    if "t{}".format(max_value_len - 1) not in mem_lang.word2index.keys() and training:
         for time_i in range(max_value_len):
             mem_lang.index_words("t{}".format(time_i), 'utter', [])
 
     print("domain_counter", domain_counter)
     return value_list, data, max_resp_len, slot_temp
-
 
 def get_seq(pairs, lang, mem_lang, batch_size, type, sequicity):  
     if(type and args['fisher_sample']>0):
@@ -421,7 +491,7 @@ def get_seq(pairs, lang, mem_lang, batch_size, type, sequicity):
         for k in data_keys:
             data_info[k].append(pair[k]) 
 
-    dataset = Dataset(data_info, lang.word2index, lang.word2index, lang.n_words, sequicity, mem_lang.word2index)
+    dataset = Dataset(data_info, lang.word2index, lang.word2index, sequicity, mem_lang.word2index)
 
     if args["imbalance_sampler"] and type:
         data_loader = torch.utils.data.DataLoader(dataset=dataset,
@@ -472,13 +542,14 @@ def prepare_data_seq(training, task="dst", sequicity=0, batch_size=100):
     file_test = 'data/test_dials.json'
     # Create saving folder
     if args['path']:
-        #folder_name = args['path'].rsplit('/', 2)[0] + '/'
+        # folder_name = args['path'].rsplit('/', 2)[0] + '/'
         folder_name = args['path'].rsplit('/', 2)[0] + '/'
     else:
-        #folder_name = 'save/{}-'.format(args["decoder"])+args["addName"]+args['dataset']+str(args['task'])+'/'
-        folder_name = 'save/{}-'.format(args["decoder"]) + args["addName"] + args['dataset'] + str(args['task']) +'-'+str(args["value_oov_rate"])+'-'+args['mode']+ '/'
+        # folder_name = 'save/{}-'.format(args["decoder"])+args["addName"]+args['dataset']+str(args['task'])+'/'
+        folder_name = 'save/{}-'.format(args["decoder"]) + args["addName"] + args['dataset'] + str(
+            args['task']) + '-' + str(args["value_oov_rate"]) + '-' + args['mode'] + '/'
     print("folder_name", folder_name)
-    if not os.path.exists(folder_name): 
+    if not os.path.exists(folder_name):
         os.makedirs(folder_name)
     # load domain-slot pairs from ontology
     ontology = json.load(open("data/multi-woz/MULTIWOZ2.1/ontology.json", 'r'))
@@ -486,31 +557,39 @@ def prepare_data_seq(training, task="dst", sequicity=0, batch_size=100):
     gating_dict = {"ptr":0, "dontcare":1, "none":2}
     # Vocabulary
     lang, mem_lang = Lang(), Lang()
-    lang.index_words(ALL_SLOTS, 'slot', [])
-    mem_lang.index_words(ALL_SLOTS, 'slot', [])
+    lang.index_words(ALL_SLOTS, 'slot',[])
+    mem_lang.index_words(ALL_SLOTS, 'slot',[])
     lang_name = 'lang-all.pkl' if args["all_vocab"] else 'lang-train.pkl'
     mem_lang_name = 'mem-lang-all.pkl' if args["all_vocab"] else 'mem-lang-train.pkl'
-    value_list = []
+    value_list=[]
     if training:
-        value_list, pair_dev, dev_max_len, slot_dev = read_langs(value_list, file_dev, gating_dict, ALL_SLOTS, "dev", lang, mem_lang, sequicity, training)
+        value_list, pair_dev, dev_max_len, slot_dev = read_langs(value_list, file_dev, gating_dict, ALL_SLOTS, "dev", lang, mem_lang, sequicity,training)
         dev = get_seq(pair_dev, lang, mem_lang, eval_batch, False, sequicity)
-        value_list, pair_test, test_max_len, slot_test = read_langs(value_list, file_test, gating_dict, ALL_SLOTS, "test", lang, mem_lang, sequicity, training)
+        value_list, pair_test, test_max_len, slot_test = read_langs(value_list, file_test, gating_dict, ALL_SLOTS, "test", lang, mem_lang,sequicity, training)
         test = get_seq(pair_test, lang, mem_lang, eval_batch, False, sequicity)
-        value_list = avoid_word(value_list)
-        print('len(value_list):', len(value_list))
+        value_list=avoid_word(value_list)
+        print('len(value_list):',len(value_list))
         random.seed(0)
-        rate = int(len(value_list) * value_oov_rate)
+        rate=int(len(value_list)*value_oov_rate)
         value_list = random.sample(value_list, rate)
         value_list, pair_train, train_max_len, slot_train = read_langs(value_list, file_train, gating_dict, ALL_SLOTS, "train", lang, mem_lang, sequicity, training)
         train = get_seq(pair_train, lang, mem_lang, batch_size, True, sequicity)
         nb_train_vocab = lang.n_words
-        if os.path.exists(folder_name + lang_name) and os.path.exists(folder_name + mem_lang_name):
-            os.remove(folder_name + lang_name)
-            os.remove(folder_name + mem_lang_name)
+        if os.path.exists(folder_name+lang_name) and os.path.exists(folder_name+mem_lang_name):
+            '''
+            print("[Info] Loading saved lang files...")
+            with open(folder_name+lang_name, 'rb') as handle: 
+                lang = pickle.load(handle)
+            with open(folder_name+mem_lang_name, 'rb') as handle: 
+                mem_lang = pickle.load(handle)
+            '''
+            os.remove(folder_name+lang_name)
+            os.remove(folder_name+mem_lang_name)
+
         print("[Info] Dumping lang files...")
-        with open(folder_name + lang_name, 'wb') as handle:
+        with open(folder_name+lang_name, 'wb') as handle:
             pickle.dump(lang, handle)
-        with open(folder_name + mem_lang_name, 'wb') as handle:
+        with open(folder_name+mem_lang_name, 'wb') as handle:
             pickle.dump(mem_lang, handle)
         emb_dump_path = 'data/emb{}.json'.format(len(lang.index2word))
         if not os.path.exists(emb_dump_path) and args["load_embedding"]:
@@ -536,7 +615,7 @@ def prepare_data_seq(training, task="dst", sequicity=0, batch_size=100):
 
     print("Read %s pairs train" % len(pair_train))
     print("Read %s pairs dev" % len(pair_dev))
-    print("Read %s pairs test" % len(pair_test))  
+    print("Read %s pairs test" % len(pair_test))
     print("Vocab_size: %s " % lang.n_words)
     print("Vocab_size Training %s" % nb_train_vocab )
     print("Vocab_size Belief %s" % mem_lang.n_words )
@@ -550,7 +629,6 @@ def prepare_data_seq(training, task="dst", sequicity=0, batch_size=100):
     print(SLOTS_LIST[3])
     LANG = [lang, mem_lang]
     return train, dev, test, test_4d, LANG, SLOTS_LIST, gating_dict, nb_train_vocab
-
 
 
 class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):

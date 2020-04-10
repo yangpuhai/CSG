@@ -132,32 +132,33 @@ def masked_cross_entropy_for_slot(logits, target, mask, use_softmax=True):
     loss = losses.sum() / (losses.size(0)*losses.size(1))
     # print("loss inside", loss)
     return loss
-
+'''
 def masked_cross_entropy_for_value(logits, target, mask):
     # logits: b * |s| * m * |v|
     # target: b * |s| * m
     # mask:   b * |s|
+    print(logits, '\n',target, '\n',mask)
+    print(logits.size())
     logits_flat = logits.view(-1, logits.size(-1)) ## -1 means infered from other dimentions
-    # print(logits_flat.size())
+    print(logits_flat.size())
     log_probs_flat = torch.log(logits_flat)
     # print("log_probs_flat", log_probs_flat)
     target_flat = target.view(-1, 1)
     # print("target_flat", target_flat)
     losses_flat = -torch.gather(log_probs_flat, dim=1, index=target_flat)
     losses = losses_flat.view(*target.size()) # b * |s| * m
+    print()
     loss = masking(losses, mask)
+    exit()
     return loss
-
-
-def masked_cross_entropy_for_value2(logits_all, target_all, mask_all, data_len):
+'''
+def masked_cross_entropy_for_value(logits_all, target_all, mask_all, data_len):
     # logits: b * |s| * m * |v|
     # target: b * |s| * m
     # mask:   b * |s|
-    #print('######  value2  ######')
     loss_all=0.0
     for i in range(len(data_len)):
         logits = logits_all[[i],:,:,:data_len[i]]
-        #print('logits.size()',logits.size())
         target = target_all[[i],:,:]
         mask = mask_all[[i],:]
         #print(logits, '\n',target, '\n',mask)
@@ -170,7 +171,7 @@ def masked_cross_entropy_for_value2(logits_all, target_all, mask_all, data_len):
         log_probs_flat = torch.log(logits_flat)
         # print("log_probs_flat", log_probs_flat)
         target_flat = target.view(-1, 1)
-        #print("target_flat", target_flat)
+        # print("target_flat", target_flat)
         losses_flat = -torch.gather(log_probs_flat, dim=1, index=target_flat)
         losses = losses_flat.view(*target.size()) # b * |s| * m
         #print()
@@ -178,7 +179,6 @@ def masked_cross_entropy_for_value2(logits_all, target_all, mask_all, data_len):
         loss_all+=loss
     #return
     return loss_all
-
 
 def masking(losses, mask):
     mask_ = []
